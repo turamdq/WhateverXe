@@ -10,6 +10,11 @@ int main() {
     uint32_t f[]={1,0x3f,0,0,0xe00fa};GTResources r;
     assert(decodeADLPGT(f,r) && r.dss==6 && r.nativeSubslices==12 && r.eus==96 && r.l3Banks==8 && r.urbKiB==512);
     assert(!decodeSmallGT(f,r));
+    // 64-EU ADL-P: one VDBOX remains enabled as physical VCS2 (mask 0x04),
+    // with VECS0 enabled. This is a valid single-MFX-engine configuration.
+    uint32_t adlp64[]={1,0x0f,0,0x44,0xe00fb};
+    assert(decodeADLPGT(adlp64,r) && r.slices==1 && r.dss==4 &&
+        r.nativeSubslices==8 && r.eus==64 && r.l3Banks==6 && r.urbKiB==384);
     for(unsigned mask=1;mask<64;++mask)for(unsigned eu=0;eu<256;++eu)for(unsigned l3=0;l3<256;++l3) {
         uint32_t v[]={1,mask,eu,l3,0xe00fa};
         const auto per=2*(8-__builtin_popcount(eu)),banks=8-__builtin_popcount(l3);
