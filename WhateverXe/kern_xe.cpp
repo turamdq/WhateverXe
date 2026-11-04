@@ -14476,6 +14476,30 @@ static void tglPublishSharedRegisterPath(const char *key, IORegistryEntry *entry
 
 bool XE::wrapTGLAcceleratorRegister(IOService *that) {
     n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorRegister", display13FBGTT.controller, static_cast<IOService *>(callbackXE->tglObservationController), 8);
+	    auto gttController = display13FBGTT.controller;
+    auto powerController = static_cast<IOService *>(display13FBPower.controller);
+    auto gttProvider = gttController ? gttController->getProvider() : nullptr;
+    auto powerProvider = powerController ? powerController->getProvider() : nullptr;
+
+    uint64_t powerControllerRecord[] {
+        1,
+        reinterpret_cast<uintptr_t>(gttController),
+        reinterpret_cast<uintptr_t>(powerController),
+        reinterpret_cast<uintptr_t>(gttProvider),
+        reinterpret_cast<uintptr_t>(powerProvider),
+        gttController ? gttController->getRegistryEntryID() : 0,
+        powerController ? powerController->getRegistryEntryID() : 0,
+        gttProvider ? gttProvider->getRegistryEntryID() : 0,
+        powerProvider ? powerProvider->getRegistryEntryID() : 0,
+        gttController == powerController,
+        gttProvider == powerProvider
+    };
+
+    IORegistryEntry::getRegistryRoot()->setProperty(
+        "N97PowerControllerAtRegister",
+        powerControllerRecord,
+        sizeof(powerControllerRecord)
+    );
 	tglObserveAccelerator(that, 4, false, 0, 0);
 	auto controller=display13FBGTT.controller;
 	if(callbackXE->adlnDetected) {
