@@ -87,6 +87,7 @@
 #include <Headers/kern_iokit.hpp>
 
 #include <IOKit/pci/IOPCIDevice.h>
+#include <IOKit/IOService.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOMapper.h>
 #include <IOKit/IOSubMemoryDescriptor.h>
@@ -14406,10 +14407,40 @@ void XE::wrapTGLAcceleratorFailure(IOService *that, uint32_t reason) {
 	tglObserveAccelerator(that, 3, true, reason, 0);
 }
 
+// Publish the service-plane paths involved in the Alder Lake shared-register
+// admission check. The accelerator may not yet be attached to IORegistry when
+// this hook runs, but its provider and the framebuffer provider should be.
+static void tglPublishSharedRegisterPath(const char *key, IORegistryEntry *entry) {
+ char path[1024] {};
+ int length=sizeof(path);
+ if(entry && entry->getPath(path,&length,gIOServicePlane)) {
+  path[sizeof(path)-1]='\0';
+  IORegistryEntry::getRegistryRoot()->setProperty(key,path);
+ } else {
+  IORegistryEntry::getRegistryRoot()->setProperty(key,"<unavailable-or-not-attached>");
+ }
+}
+
 bool XE::wrapTGLAcceleratorRegister(IOService *that) {
 	tglObserveAccelerator(that, 4, false, 0, 0);
 	auto controller=display13FBGTT.controller;
 	if(callbackXE->adlnDetected) {
+  auto controllerProvider=controller ? controller->getProvider() : nullptr;
+  auto acceleratorProvider=that ? that->getProvider() : nullptr;
+  tglPublishSharedRegisterPath("N97SharedControllerPath",controller);
+  tglPublishSharedRegisterPath("N97SharedControllerProviderPath",controllerProvider);
+  tglPublishSharedRegisterPath("N97SharedControllerProviderParentPath",controllerProvider ? controllerProvider->getProvider() : nullptr);
+  tglPublishSharedRegisterPath("N97SharedAcceleratorPath",that);
+  tglPublishSharedRegisterPath("N97SharedAcceleratorProviderPath",acceleratorProvider);
+  tglPublishSharedRegisterPath("N97SharedAcceleratorProviderParentPath",acceleratorProvider ? acceleratorProvider->getProvider() : nullptr);
+  uint64_t identities[] {
+   reinterpret_cast<uintptr_t>(controller),reinterpret_cast<uintptr_t>(that),
+   reinterpret_cast<uintptr_t>(controllerProvider),reinterpret_cast<uintptr_t>(acceleratorProvider),
+   controller ? controller->getRegistryEntryID() : 0, that ? that->getRegistryEntryID() : 0,
+   controllerProvider ? controllerProvider->getRegistryEntryID() : 0,
+   acceleratorProvider ? acceleratorProvider->getRegistryEntryID() : 0
+  };
+  IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterIdentities",identities,sizeof(identities));
 	 const bool ready=controller && controller==callbackXE->tglObservationController && adlnSharedCallback &&
 	  that->getMetaClass()->getClassSize()>=0x1400 && controller->getProvider()==that->getProvider() &&
 	  !Display13FBMemory::field<uintptr_t>(controller,0xC0) && !adlnSharedOwner &&
