@@ -6506,7 +6506,27 @@ void XE::wrapDisplay13FBMemoryInit(IOService *controller) {
     if(valid) {
 		g.controller=controller;g.nativeBase=native->getVirtualAddress();g.map=map;
 		controller->retain(); // Own identity and mapping through reboot, including failed start.
+		// Diagnostic snapshots only: capture the controller/provider relationship
+		// immediately before and after Apple's native framebuffer memory init.
+		auto captureProvider=controller->getProvider();
+		uint64_t captureBefore[] {
+			1,reinterpret_cast<uintptr_t>(controller),reinterpret_cast<uintptr_t>(captureProvider),
+			controller->getRegistryEntryID(),captureProvider ? captureProvider->getRegistryEntryID() : 0,
+			controller->getMetaClass()->getClassSize(),
+			captureProvider ? captureProvider->getMetaClass()->getClassSize() : 0,
+			captureProvider ? 1ULL : 0ULL
+		};
+		IORegistryEntry::getRegistryRoot()->setProperty("N97FBControllerCaptureBeforeNativeInit",captureBefore,sizeof(captureBefore));
 		FunctionCast(wrapDisplay13FBMemoryInit,s->orgDisplay13FBMemoryInit)(controller);
+		auto captureProviderAfter=controller->getProvider();
+		uint64_t captureAfter[] {
+			1,reinterpret_cast<uintptr_t>(controller),reinterpret_cast<uintptr_t>(captureProviderAfter),
+			controller->getRegistryEntryID(),captureProviderAfter ? captureProviderAfter->getRegistryEntryID() : 0,
+			controller->getMetaClass()->getClassSize(),
+			captureProviderAfter ? captureProviderAfter->getMetaClass()->getClassSize() : 0,
+			captureProviderAfter==captureProvider
+		};
+		IORegistryEntry::getRegistryRoot()->setProperty("N97FBControllerCaptureAfterNativeInit",captureAfter,sizeof(captureAfter));
 		auto recycleBytes=Display13FBMemory::field<uint32_t>(controller,0x1AB8);
 		const auto recyclePhysical=Display13FBMemory::field<uint64_t>(controller,0x1AB0);
 		const bool recycleReady=XELPMemory::boundRecycle(xelpMemory,recyclePhysical,recycleBytes);
@@ -14427,6 +14447,24 @@ bool XE::wrapTGLAcceleratorRegister(IOService *that) {
 	if(callbackXE->adlnDetected) {
   auto controllerProvider=controller ? controller->getProvider() : nullptr;
   auto acceleratorProvider=that ? that->getProvider() : nullptr;
+  uint64_t liveObjects[] {
+   1,reinterpret_cast<uintptr_t>(controller),
+   reinterpret_cast<uintptr_t>(callbackXE->tglObservationController),
+   reinterpret_cast<uintptr_t>(controllerProvider),
+   reinterpret_cast<uintptr_t>(that),
+   reinterpret_cast<uintptr_t>(acceleratorProvider),
+   controller ? controller->getRegistryEntryID() : 0,
+   callbackXE->tglObservationController ? callbackXE->tglObservationController->getRegistryEntryID() : 0,
+   controllerProvider ? controllerProvider->getRegistryEntryID() : 0,
+   that ? that->getRegistryEntryID() : 0,
+   acceleratorProvider ? acceleratorProvider->getRegistryEntryID() : 0,
+   controller ? controller->getMetaClass()->getClassSize() : 0,
+   controllerProvider ? controllerProvider->getMetaClass()->getClassSize() : 0,
+   that ? that->getMetaClass()->getClassSize() : 0,
+   acceleratorProvider ? acceleratorProvider->getMetaClass()->getClassSize() : 0,
+   controllerProvider==acceleratorProvider
+  };
+  IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterLiveObjects",liveObjects,sizeof(liveObjects));
   tglPublishSharedRegisterPath("N97SharedControllerPath",controller);
   tglPublishSharedRegisterPath("N97SharedControllerProviderPath",controllerProvider);
   tglPublishSharedRegisterPath("N97SharedControllerProviderParentPath",controllerProvider ? controllerProvider->getProvider() : nullptr);
