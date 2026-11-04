@@ -6463,8 +6463,7 @@ IOReturn XE::wrapDisplay13FramebufferPlatformCall(IOService *controller,const OS
 // Diagnostic-only snapshots around native framebuffer lifecycle callbacks.
 // They record the retained GTT controller, the current callback controller,
 // and each object's provider without changing ownership or admission.
-static void n97CaptureFBControllerLifecycle(const char *key, IOService *controller, uint64_t stage) {
-    auto tracked = callbackXE ? reinterpret_cast<IOService *>(callbackXE->tglObservationController) : nullptr;
+static void n97CaptureFBControllerLifecycle(const char *key, IOService *controller, IOService *tracked, uint64_t stage) {
     auto retained = display13FBGTT.controller;
     auto provider = controller ? controller->getProvider() : nullptr;
     auto trackedProvider = tracked ? tracked->getProvider() : nullptr;
@@ -6667,11 +6666,11 @@ bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index
 
 bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
 	auto s=callbackXE;
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleGetOSInfoEntry", controller, 4);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleGetOSInfoEntry", controller, static_cast<IOService *>(s->tglObservationController), 4);
 	if(!s->display13FBTopologyHooksReady || !controller || controller->getMetaClass()->getClassSize()<0x1C20 ||
 		!Display13FBTopology::supportedWiring(s->adlnOutputWiring,s->xeProfile.display==XELP::Display::XeLPD,checkKernelArgument("-wex-dsi-adopt")) || !checkKernelArgument("-disablegfxfirmware"))return false;
     const bool nativeOSInfo=FunctionCast(wrapAlderLakeNGetOSInformation,s->orgAlderLakeNGetOSInformation)(controller);
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleGetOSInfoAfterNative", controller, 5);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleGetOSInfoAfterNative", controller, static_cast<IOService *>(s->tglObservationController), 5);
     if(!nativeOSInfo)return false;
 	auto platform=Display13FBMemory::field<void *>(controller,0xD40);
 	if(!Display13FBTopology::apply(s->adlnPlatform,sizeof(s->adlnPlatform),platform,s->adlnOutputWiring))return false;
@@ -8339,7 +8338,7 @@ bool XE::prepareDisplay13BootScanout(IOPCIDevice *pci) {
 
 bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 	auto s=callbackXE;auto pci=OSDynamicCast(IOPCIDevice,provider);
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartEntry", that, 1);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartEntry", that, static_cast<IOService *>(s->tglObservationController), 1);
 	if(s->tglObservationController==that)s->tglObservationController=nullptr;
 	if(!pci)return false;
     const auto board=s->display13BoardWiring(provider);
@@ -8392,7 +8391,7 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
     if(Display13FBTopology::deferredBootPrepare(board,s->adlpDisplaySelected) && !s->prepareDisplay13BootScanout(pci))return false;
 	SYSLOG("igfx","Display13 native controller start enter offline=%u",display13Offline);
 	const auto started=FunctionCast(wrapDisplay13FramebufferStart,s->orgFramebufferStart)(that,provider);
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartAfterNative", that, 2);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartAfterNative", that, static_cast<IOService *>(s->tglObservationController), 2);
 	SYSLOG("igfx","Display13 native controller start return=%u",started);
 	that->setProperty("N97FramebufferOriginalStart",started);
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferOriginalStart",started);
@@ -8417,16 +8416,16 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
    that->setProperty("N97GTPowerSample",power);power->release();
   }
  }
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartExit", that, 3);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartExit", that, static_cast<IOService *>(s->tglObservationController), 3);
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferStartAccepted",accepted);
 	return accepted;
 }
 
 
 void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop) {
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleSetupWorkLoopEntry", controller, 6);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleSetupWorkLoopEntry", controller, static_cast<IOService *>(callbackXE->tglObservationController), 6);
 	FunctionCast(wrapAlderLakeNSetupWorkLoop,callbackXE->orgAlderLakeNSetupWorkLoop)(controller,workLoop);
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleSetupWorkLoopAfterNative", controller, 7);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleSetupWorkLoopAfterNative", controller, static_cast<IOService *>(callbackXE->tglObservationController), 7);
 	auto &c=display13FBPower;if(!c.lock)return;
 	auto pciOwner=controller ? OSDynamicCast(IOPCIDevice,controller->getProvider()) : nullptr;
 	auto irqSource=controller ? OSDynamicCast(IOFilterInterruptEventSource,
@@ -14476,7 +14475,7 @@ static void tglPublishSharedRegisterPath(const char *key, IORegistryEntry *entry
 }
 
 bool XE::wrapTGLAcceleratorRegister(IOService *that) {
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorRegister", display13FBGTT.controller, 8);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorRegister", display13FBGTT.controller, static_cast<IOService *>(callbackXE->tglObservationController), 8);
 	tglObserveAccelerator(that, 4, false, 0, 0);
 	auto controller=display13FBGTT.controller;
 	if(callbackXE->adlnDetected) {
