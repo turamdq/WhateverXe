@@ -14454,7 +14454,7 @@ bool XE::wrapTGLAcceleratorRegister(IOService *that) {
    reinterpret_cast<uintptr_t>(that),
    reinterpret_cast<uintptr_t>(acceleratorProvider),
    controller ? controller->getRegistryEntryID() : 0,
-   callbackXE->tglObservationController ? callbackXE->tglObservationController->getRegistryEntryID() : 0,
+   controller==callbackXE->tglObservationController,
    controllerProvider ? controllerProvider->getRegistryEntryID() : 0,
    that ? that->getRegistryEntryID() : 0,
    acceleratorProvider ? acceleratorProvider->getRegistryEntryID() : 0,
