@@ -10467,6 +10467,7 @@ void XE::wrapAlderLakeNOptimizedDBUF(IOService *controller) {adlnSetupDBUF(contr
 
 
 void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
+	n97CaptureFBControllerLifecycle("N97FBControllerLifecyclePowerInitEntry",static_cast<IOService *>(controller),static_cast<IOService *>(callbackXE->tglObservationController),9);
 	auto &c=display13FBPower; if(!c.lock)return;
 	uint64_t record[32] {}; Display13Power::Result result;
     unsigned tcBootDDI=UINT32_MAX;
@@ -10598,6 +10599,7 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 	// The replaced native init starts the display engine before returning.
 	// Keep that ordering without executing its Display12 DBUF/clock writes.
 	if(result.status==Display13Power::Status::Complete)wrapAlderLakeNEngineEnable(power);
+	n97CaptureFBControllerLifecycle("N97FBControllerLifecyclePowerInitExit",static_cast<IOService *>(controller),static_cast<IOService *>(callbackXE->tglObservationController),10);
 }
 
 bool XE::adlnPowerReference(void *power,uint32_t operation,uint32_t domain) {
