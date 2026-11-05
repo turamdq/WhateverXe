@@ -14022,6 +14022,7 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartEntry",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),11);
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && (!callbackXE->adlsDisplayHooksReady ||
@@ -14123,7 +14124,9 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 	}
 	tglObserveAccelerator(that, 2, false, 0, reinterpret_cast<uintptr_t>(provider));
 	SYSLOG("igfx", "TGL accelerator start entered");
-	bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAcceleratorStart)(that, provider);
+	 n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartBeforeNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),12);
+bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAcceleratorStart)(that, provider);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13);
 	if (result) IORegistryEntry::getRegistryRoot()->setProperty("TGLIOSurfaceCCSAtStart",
 		*reinterpret_cast<uint8_t *>(reinterpret_cast<uint8_t *>(that)+0x1474),32);
 	if (tglHost.owner==that) {
@@ -14148,7 +14151,9 @@ bool XE::startAlderLakeNParentBoundary(IOService *that, IOService *provider) {
 	auto root=IORegistryEntry::getRegistryRoot();
 	root->setProperty("N97LoadOnlyStartBlocked",false);
 	root->setProperty("N97ParentStartEntered",true);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleParentStartBeforeNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),12);
 	const bool result=FunctionCast(wrapTGLAcceleratorStart,callbackXE->orgTGLAcceleratorStart)(that,provider);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleParentStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13);
 	root->setProperty("N97ParentStartReturned",true);
 	root->setProperty("N97ParentStartResult",result);
 	return result;
@@ -17961,6 +17966,7 @@ void *XE::wrapTGLAllocatePathFixed(uint32_t pipe) {
 }
 
 void XE::wrapTGLControllerStop(void *controller, IOService *provider) {
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleControllerStopEntry",static_cast<IOService *>(controller),static_cast<IOService *>(callbackXE->tglObservationController),14);
  auto s=callbackXE;
  if(!__sync_bool_compare_and_swap(&s->tglStopInProgress,false,true))return;
  if(__atomic_load_n(&s->tglStopComplete,__ATOMIC_ACQUIRE)) {
@@ -18004,7 +18010,9 @@ void XE::wrapTGLControllerStop(void *controller, IOService *provider) {
   if(!released){blocked(2);return;}
  }
  if(!retireDisplay13Controller(controller)){blocked(3);return;}
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleControllerStopBeforeNative",static_cast<IOService *>(controller),static_cast<IOService *>(s->tglObservationController),15);
  FunctionCast(wrapTGLControllerStop,s->orgTGLControllerStop)(controller,provider);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleControllerStopAfterNative",static_cast<IOService *>(controller),static_cast<IOService *>(s->tglObservationController),16);
  tglRecordStartOrder(8,controller);
  __atomic_store_n(&s->tglStopComplete,true,__ATOMIC_RELEASE);
  IORegistryEntry::getRegistryRoot()->setProperty("WEXFramebufferStopBlocked",static_cast<uint64_t>(0),32);
