@@ -7,8 +7,12 @@ a=s.index('bool XE::wrapTGLAcceleratorStart(');b=s.index(' if (callbackXE->adlnD
 entry=s[a:b]+' return true;\n}'
 code='''
 #include <cassert>
+#include <cstdint>
 struct IOService {};
+static void n97CaptureFBControllerLifecycle(const char *, IOService *, IOService *, uint64_t) {}
+struct { IOService *controller = nullptr; } display13FBGTT;
 struct XE {
+ void *tglObservationController=nullptr;
  bool tglGT2Detected=false,tglGT2Ready=false;
  bool display12SmallGTDetected=false,display12SmallGTReady=true;
  bool adlsDisplaySelected=true,adlsDisplayHooksReady=true,adlsBootConsumersFailed=false;
