@@ -6486,11 +6486,10 @@ static void n97CaptureFBControllerLifecycle(const char *key, IOService *controll
 }
 
 // Diagnostic-only snapshots of the accelerator probe's exact controller and provider identities.
-static void n97CaptureAcceleratorProbeLifecycle(const char *key, IOService *accelerator, IOService *provider, uint64_t stage) {
+static void n97CaptureAcceleratorProbeLifecycle(const char *key, IOService *accelerator, IOService *provider, IOService *tracked, uint64_t stage) {
     auto controller = display13FBGTT.controller;
     auto controllerProvider = controller ? controller->getProvider() : nullptr;
     auto acceleratorProvider = accelerator ? accelerator->getProvider() : nullptr;
-    auto tracked = static_cast<IOService *>(callbackXE->tglObservationController);
     auto trackedProvider = tracked ? tracked->getProvider() : nullptr;
     uint64_t record[] {
         1, stage,
@@ -14453,7 +14452,7 @@ void XE::tglObserveAccelerator(IOService *that, uint32_t stage, bool done, uint6
 }
 
 IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SInt32 *score) {
- n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeEntry",that,provider,17);
+ n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeEntry",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),17);
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && !callbackXE->adlsDisplayHooksReady))return nullptr;
@@ -14472,9 +14471,9 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 			root->setProperty("N97LoadOnlyProbeBlocked",true);
 			return nullptr;
 		}
-		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,18);
+		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),18);
 		auto result=FunctionCast(wrapTGLAcceleratorProbe,callbackXE->orgTGLAcceleratorProbe)(that,provider,score);
-		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,19);
+		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19);
 		root->setProperty("N97LoadOnlyProbeReturned",true);
 		root->setProperty("N97LoadOnlyProbeMatched",result!=nullptr);
 		return result;
@@ -14485,9 +14484,9 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 		tglObserveAccelerator(that, 1, true, 0, identity);
 		return nullptr;
 	}
-	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,18);
+	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),18);
 	auto result = FunctionCast(wrapTGLAcceleratorProbe, callbackXE->orgTGLAcceleratorProbe)(that, provider, score);
-	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,19);
+	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19);
 	tglObserveAccelerator(that, 1, true, reinterpret_cast<uintptr_t>(result), identity);
 	return result;
 }
