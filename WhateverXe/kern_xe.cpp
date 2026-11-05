@@ -6485,6 +6485,32 @@ static void n97CaptureFBControllerLifecycle(const char *key, IOService *controll
     IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 }
 
+// Diagnostic-only snapshots of the accelerator probe's exact controller and provider identities.
+static void n97CaptureAcceleratorProbeLifecycle(const char *key, IOService *accelerator, IOService *provider, uint64_t stage) {
+    auto controller = display13FBGTT.controller;
+    auto controllerProvider = controller ? controller->getProvider() : nullptr;
+    auto acceleratorProvider = accelerator ? accelerator->getProvider() : nullptr;
+    auto tracked = static_cast<IOService *>(callbackXE->tglObservationController);
+    auto trackedProvider = tracked ? tracked->getProvider() : nullptr;
+    uint64_t record[] {
+        1, stage,
+        reinterpret_cast<uintptr_t>(controller), reinterpret_cast<uintptr_t>(controllerProvider),
+        controller ? controller->getRegistryEntryID() : 0,
+        controllerProvider ? controllerProvider->getRegistryEntryID() : 0,
+        reinterpret_cast<uintptr_t>(accelerator), reinterpret_cast<uintptr_t>(acceleratorProvider),
+        accelerator ? accelerator->getRegistryEntryID() : 0,
+        acceleratorProvider ? acceleratorProvider->getRegistryEntryID() : 0,
+        reinterpret_cast<uintptr_t>(provider), provider ? provider->getRegistryEntryID() : 0,
+        reinterpret_cast<uintptr_t>(tracked), reinterpret_cast<uintptr_t>(trackedProvider),
+        tracked ? tracked->getRegistryEntryID() : 0,
+        trackedProvider ? trackedProvider->getRegistryEntryID() : 0,
+        controller == tracked, controllerProvider == acceleratorProvider,
+        controllerProvider == provider, acceleratorProvider == provider,
+        controller ? controller->getMetaClass()->getClassSize() : 0
+    };
+    IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
+}
+
 void XE::wrapDisplay13FBMemoryInit(IOService *controller) {
 	auto &g=display13FBGTT;auto s=callbackXE;
 	auto pci=controller ? OSDynamicCast(IOPCIDevice,controller->getProvider()) : nullptr;
@@ -14427,6 +14453,7 @@ void XE::tglObserveAccelerator(IOService *that, uint32_t stage, bool done, uint6
 }
 
 IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SInt32 *score) {
+ n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeEntry",that,provider,17);
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && !callbackXE->adlsDisplayHooksReady))return nullptr;
@@ -14445,7 +14472,9 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 			root->setProperty("N97LoadOnlyProbeBlocked",true);
 			return nullptr;
 		}
+		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,18);
 		auto result=FunctionCast(wrapTGLAcceleratorProbe,callbackXE->orgTGLAcceleratorProbe)(that,provider,score);
+		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,19);
 		root->setProperty("N97LoadOnlyProbeReturned",true);
 		root->setProperty("N97LoadOnlyProbeMatched",result!=nullptr);
 		return result;
@@ -14456,7 +14485,9 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 		tglObserveAccelerator(that, 1, true, 0, identity);
 		return nullptr;
 	}
+	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,18);
 	auto result = FunctionCast(wrapTGLAcceleratorProbe, callbackXE->orgTGLAcceleratorProbe)(that, provider, score);
+	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,19);
 	tglObserveAccelerator(that, 1, true, reinterpret_cast<uintptr_t>(result), identity);
 	return result;
 }
