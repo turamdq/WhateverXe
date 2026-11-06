@@ -6467,10 +6467,17 @@ IOReturn XE::wrapDisplay13FramebufferPlatformCall(IOService *controller,const OS
 static FBControllerLifecycle::Trace n97FBControllerLifecycleTrace;
 static uint32_t n97FBControllerLifecycleTracePublished;
 static bool n97FBControllerLifecycleSerialize(void *,void *,OSSerialize *serializer) {
-    uint64_t data[3+FBControllerLifecycle::Slots*(FBControllerLifecycle::Words+1)] {};
-    n97FBControllerLifecycleTrace.snapshot(data);
-    auto bytes=OSData::withBytes(data,sizeof(data)); if(!bytes)return false;
-    const bool ok=bytes->serialize(serializer);bytes->release();return ok;
+    auto bytes=OSData::withCapacity(sizeof(uint64_t)*(3+FBControllerLifecycle::Slots*(FBControllerLifecycle::Words+1)));
+    if(!bytes)return false;
+    uint64_t header[3] {},slot[FBControllerLifecycle::Words+1] {};
+    n97FBControllerLifecycleTrace.snapshotHeader(header);
+    bool ok=bytes->appendBytes(header,sizeof(header));
+    for(unsigned i=0;ok && i<FBControllerLifecycle::Slots;++i) {
+        n97FBControllerLifecycleTrace.snapshotSlot(i,slot);
+        ok=bytes->appendBytes(slot,sizeof(slot));
+    }
+    if(ok)ok=bytes->serialize(serializer);
+    bytes->release();return ok;
 }
 static uint64_t n97FBControllerLifecycleKey(const char *key) {
     uint32_t hash=2166136261U;

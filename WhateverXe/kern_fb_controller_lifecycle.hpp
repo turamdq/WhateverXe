@@ -25,17 +25,25 @@ struct Trace {
   for(unsigned i=0;i<Words;++i)slot.data[i]=data[i];
   __atomic_store_n(&slot.state,2,__ATOMIC_RELEASE);
  }
- void snapshot(uint64_t *out) const {
+ void snapshotHeader(uint64_t *out) const {
   if(!out)return;
   out[0]=1;
   out[1]=__atomic_load_n(&count,__ATOMIC_ACQUIRE);
   out[2]=__atomic_load_n(&dropped,__ATOMIC_RELAXED);
+ }
+ void snapshotSlot(unsigned i,uint64_t *out) const {
+  if(!out || i>=Slots)return;
+  const auto &slot=slots[i];
+  const bool ready=__atomic_load_n(&slot.state,__ATOMIC_ACQUIRE)==2;
+  out[0]=ready?1:0;
+  for(unsigned j=0;j<Words;++j)out[j+1]=ready?slot.data[j]:0;
+ }
+ void snapshot(uint64_t *out) const {
+  if(!out)return;
+  snapshotHeader(out);
   for(unsigned i=0;i<Slots;++i) {
    auto p=out+3+i*(Words+1);
-   const auto &slot=slots[i];
-   const bool ready=__atomic_load_n(&slot.state,__ATOMIC_ACQUIRE)==2;
-   p[0]=ready?1:0;
-   for(unsigned j=0;j<Words;++j)p[j+1]=ready?slot.data[j]:0;
+   snapshotSlot(i,p);
   }
  }
 };
