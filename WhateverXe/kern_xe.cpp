@@ -60,6 +60,7 @@
 #include "kern_tgl_tc_cold.hpp"
 #include "kern_tgl_boot_readout.hpp"
 #include "kern_tgl_start_order.hpp"
+#include "kern_fb_controller_lifecycle.hpp"
 #include "kern_donor.hpp"
 #include "kern_tgl_csb.hpp"
 #include "kern_tgl_context_cache.hpp"
@@ -6463,11 +6464,51 @@ IOReturn XE::wrapDisplay13FramebufferPlatformCall(IOService *controller,const OS
 // Diagnostic-only snapshots around native framebuffer lifecycle callbacks.
 // They record the retained GTT controller, the current callback controller,
 // and each object's provider without changing ownership or admission.
-static void n97CaptureFBControllerLifecycle(const char *key, IOService *controller, IOService *tracked, uint64_t stage) {
+static FBControllerLifecycle::Trace n97FBControllerLifecycleTrace;
+static uint32_t n97FBControllerLifecycleTracePublished;
+static bool n97FBControllerLifecycleSerialize(void *,void *,OSSerialize *serializer) {
+    uint64_t data[3+FBControllerLifecycle::Slots*(FBControllerLifecycle::Words+1)] {};
+    n97FBControllerLifecycleTrace.snapshot(data);
+    auto bytes=OSData::withBytes(data,sizeof(data)); if(!bytes)return false;
+    const bool ok=bytes->serialize(serializer);bytes->release();return ok;
+}
+static uint64_t n97FBControllerLifecycleKey(const char *key) {
+    uint32_t hash=2166136261U;
+    if(key)for(;*key;++key)hash=(hash^static_cast<uint8_t>(*key))*16777619U;
+    return hash;
+}
+static void n97RecordFBControllerLifecycle(const char *key,IOService *object,IOService *objectProvider,
+    IOService *argumentProvider,IOService *tracked,IOService *trackedProvider,
+    IOService *retained,IOService *retainedProvider,uint64_t stage,uint64_t outcome=0) {
+    const auto sequence=n97FBControllerLifecycleTrace.reserve();
+    if(sequence) {
+        uint64_t uptime {},timestampNs {};clock_get_uptime(&uptime);absolutetime_to_nanoseconds(uptime,&timestampNs);
+        uint64_t record[FBControllerLifecycle::Words] {
+            sequence,n97FBControllerLifecycleKey(key),stage,timestampNs,
+            reinterpret_cast<uintptr_t>(current_thread()),reinterpret_cast<uintptr_t>(object),
+            object?object->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(objectProvider),
+            objectProvider?objectProvider->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(argumentProvider),
+            argumentProvider?argumentProvider->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(tracked),
+            tracked?tracked->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(trackedProvider),
+            trackedProvider?trackedProvider->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(retained),
+            retained?retained->getRegistryEntryID():0,reinterpret_cast<uintptr_t>(retainedProvider),
+            retainedProvider?retainedProvider->getRegistryEntryID():0,outcome
+        };
+        n97FBControllerLifecycleTrace.publish(sequence,record);
+    }
+    if(__sync_bool_compare_and_swap(&n97FBControllerLifecycleTracePublished,0,1)) {
+        auto live=OSSerializer::forTarget(nullptr,n97FBControllerLifecycleSerialize);
+        if(live) {IORegistryEntry::getRegistryRoot()->setProperty("N97FBControllerLifecycleTrace",live);live->release();}
+        else __atomic_store_n(&n97FBControllerLifecycleTracePublished,0,__ATOMIC_RELEASE);
+    }
+}
+static void n97CaptureFBControllerLifecycle(const char *key, IOService *controller, IOService *tracked, uint64_t stage, uint64_t outcome=0) {
     auto retained = display13FBGTT.controller;
     auto provider = controller ? controller->getProvider() : nullptr;
     auto trackedProvider = tracked ? tracked->getProvider() : nullptr;
     auto retainedProvider = retained ? retained->getProvider() : nullptr;
+    n97RecordFBControllerLifecycle(key,controller,provider,nullptr,tracked,trackedProvider,
+        retained,retainedProvider,stage,outcome);
     uint64_t record[] {
         1, stage,
         reinterpret_cast<uintptr_t>(controller), reinterpret_cast<uintptr_t>(provider),
@@ -6486,11 +6527,13 @@ static void n97CaptureFBControllerLifecycle(const char *key, IOService *controll
 }
 
 // Diagnostic-only snapshots of the accelerator probe's exact controller and provider identities.
-static void n97CaptureAcceleratorProbeLifecycle(const char *key, IOService *accelerator, IOService *provider, IOService *tracked, uint64_t stage) {
+static void n97CaptureAcceleratorProbeLifecycle(const char *key, IOService *accelerator, IOService *provider, IOService *tracked, uint64_t stage, uint64_t outcome=0) {
     auto controller = display13FBGTT.controller;
     auto controllerProvider = controller ? controller->getProvider() : nullptr;
     auto acceleratorProvider = accelerator ? accelerator->getProvider() : nullptr;
     auto trackedProvider = tracked ? tracked->getProvider() : nullptr;
+    n97RecordFBControllerLifecycle(key,accelerator,acceleratorProvider,provider,tracked,trackedProvider,
+        controller,controllerProvider,stage,outcome);
     uint64_t record[] {
         1, stage,
         reinterpret_cast<uintptr_t>(controller), reinterpret_cast<uintptr_t>(controllerProvider),
@@ -8416,7 +8459,7 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
     if(Display13FBTopology::deferredBootPrepare(board,s->adlpDisplaySelected) && !s->prepareDisplay13BootScanout(pci))return false;
 	SYSLOG("igfx","Display13 native controller start enter offline=%u",display13Offline);
 	const auto started=FunctionCast(wrapDisplay13FramebufferStart,s->orgFramebufferStart)(that,provider);
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartAfterNative", that, static_cast<IOService *>(s->tglObservationController), 2);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartAfterNative", that, static_cast<IOService *>(s->tglObservationController), 2, started);
 	SYSLOG("igfx","Display13 native controller start return=%u",started);
 	that->setProperty("N97FramebufferOriginalStart",started);
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferOriginalStart",started);
@@ -8441,7 +8484,7 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
    that->setProperty("N97GTPowerSample",power);power->release();
   }
  }
-    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartExit", that, static_cast<IOService *>(s->tglObservationController), 3);
+    n97CaptureFBControllerLifecycle("N97FBControllerLifecycleStartExit", that, static_cast<IOService *>(s->tglObservationController), 3, accepted);
 	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferStartAccepted",accepted);
 	return accepted;
 }
@@ -14151,7 +14194,7 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 	SYSLOG("igfx", "TGL accelerator start entered");
 	 n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartBeforeNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),12);
 bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAcceleratorStart)(that, provider);
- n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13,result);
 	if (result) IORegistryEntry::getRegistryRoot()->setProperty("TGLIOSurfaceCCSAtStart",
 		*reinterpret_cast<uint8_t *>(reinterpret_cast<uint8_t *>(that)+0x1474),32);
 	if (tglHost.owner==that) {
@@ -14178,7 +14221,7 @@ bool XE::startAlderLakeNParentBoundary(IOService *that, IOService *provider) {
 	root->setProperty("N97ParentStartEntered",true);
  n97CaptureFBControllerLifecycle("N97FBControllerLifecycleParentStartBeforeNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),12);
 	const bool result=FunctionCast(wrapTGLAcceleratorStart,callbackXE->orgTGLAcceleratorStart)(that,provider);
- n97CaptureFBControllerLifecycle("N97FBControllerLifecycleParentStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13);
+ n97CaptureFBControllerLifecycle("N97FBControllerLifecycleParentStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13,result);
 	root->setProperty("N97ParentStartReturned",true);
 	root->setProperty("N97ParentStartResult",result);
 	return result;
@@ -14473,7 +14516,7 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 		}
 		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),18);
 		auto result=FunctionCast(wrapTGLAcceleratorProbe,callbackXE->orgTGLAcceleratorProbe)(that,provider,score);
-		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19);
+		n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19,reinterpret_cast<uintptr_t>(result));
 		root->setProperty("N97LoadOnlyProbeReturned",true);
 		root->setProperty("N97LoadOnlyProbeMatched",result!=nullptr);
 		return result;
@@ -14486,7 +14529,7 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 	}
 	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),18);
 	auto result = FunctionCast(wrapTGLAcceleratorProbe, callbackXE->orgTGLAcceleratorProbe)(that, provider, score);
-	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19);
+	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19,reinterpret_cast<uintptr_t>(result));
 	tglObserveAccelerator(that, 1, true, reinterpret_cast<uintptr_t>(result), identity);
 	return result;
 }
