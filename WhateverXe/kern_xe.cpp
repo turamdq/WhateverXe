@@ -8517,7 +8517,13 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 	// Controller start can publish PCI-backed FB children before the controller
 	// itself becomes a registered service. Publish only copied CPU evidence at
 	// the root so a rejected handoff remains observable through SSH.
-	uint64_t check[38] {3,sourceBound,adlnIRQOwner(controller),irqSource!=nullptr};
+	// Schema 4: slots 38..57 hold branch, DDI/transport, SST qualification,
+	// first failed guard, result, and retained boot-AUX lease state.
+	uint64_t check[58] {4,sourceBound,adlnIRQOwner(controller),irqSource!=nullptr};
+	// Adoption failures 17..22 cover the SST/TC selection; 30..32 cover DSI,
+	// stale adopted-path, and power-object publication failures.
+	uint32_t adoptionBranch=0,adoptionFailure=0,bootActivePipes=0;
+	bool adoptionSSTPort=false,adoptionAUXCheck=false;
 	if(irqSource) {
 		check[4]=irqSource->getProvider()==pci;check[5]=irqSource->getIntIndex();
 		check[6]=irqSource->getWorkLoop()==workLoop;check[7]=irqSource->isEnabled();
@@ -8601,36 +8607,65 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 		}
 		check[37]=valid;
         if(valid && callbackXE->adlnOutputWiring.dsi) {
+            adoptionBranch=1;
             IOLockUnlock(c.lock);
             const bool adopted=callbackXE->adoptDSIBootPath(fb,path);
             IOLockLock(c.lock);
             result.status=adopted ? Display13Power::Status::Complete : Display13Power::Status::NotReady;
+            if(!adopted)adoptionFailure=30;
         } else if(valid) {
 			if(!c.bridge.bootAdopted) {
                 const auto ddi=c.bridge.bootPort;
                 const bool dp=ddi<7 && (callbackXE->adlnOutputWiring.links()&(1U<<ddi));
                 bool linked=!dp;
-                if(dp && display13SSTPort(port)) {
+                if(dp) {
+                    adoptionBranch=2;
+                    auto sstPort=display13SSTPort(port);adoptionSSTPort=sstPort!=nullptr;
+                    if(!sstPort)adoptionFailure=17;
+                }
+                if(dp && adoptionSSTPort) {
                     Display13FBBootIO io{c.map};auto &boot=c.displayScratch;AlderLakeN::readDisplay(io,true,boot);
+                    bootActivePipes=boot.activePipes;
                     if(ddi>=3) {
                         const auto source=Display13TC::Boot::capture(io,true,ddi,0);
                         Display13FBTCIO tc{port,ddi-3};
-                        linked=tc.owned(ddi) && tc.linkHeld() && boot.activePipes==1 &&
-                            AlderLakeN::dpSourceUnchanged(io,boot,0,ddi,0,&source);
+                        if(!tc.owned(ddi))adoptionFailure=18;
+                        else if(!tc.linkHeld())adoptionFailure=19;
+                        else if(boot.activePipes!=1)adoptionFailure=20;
+                        else if(!AlderLakeN::dpSourceUnchanged(io,boot,0,ddi,0,&source))adoptionFailure=21;
+                        else linked=true;
                     } else if(ddi<2) {
-                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,c.mainLink[ddi],reinterpret_cast<uintptr_t>(port),ddi,(callbackXE->adlnOutputWiring.panel&(1U<<ddi))!=0);
+                        adoptionAUXCheck=true;
+                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,c.mainLink[ddi],reinterpret_cast<uintptr_t>(port),ddi,
+                            (callbackXE->adlnOutputWiring.panel&(1U<<ddi))!=0,&adoptionFailure);
                         linked=result.status==Display13Power::Status::Complete;
                         if(linked)port->retain(); // Released only after real buffer stop/idle.
-                    }
-                }
+                    } else adoptionFailure=22;
+                } else if(!dp)adoptionBranch=3;
                 if(linked)result=c.bridge.adoptBootPath(reinterpret_cast<uintptr_t>(path),0,ddi);
                 else result.status=Display13Power::Status::NotReady;
             }
 			else if(c.bridge.bootPath==reinterpret_cast<uintptr_t>(path))result.status=Display13Power::Status::Complete;
+			else {adoptionBranch=4;adoptionFailure=31;}
 			if(result.status==Display13Power::Status::Complete &&
-				!Display13Power::publishObject(c.bridge,c.power,0x80,controller,0x1C20))result.status=Display13Power::Status::NotReady;
+				!Display13Power::publishObject(c.bridge,c.power,0x80,controller,0x1C20)) {
+				result.status=Display13Power::Status::NotReady;adoptionFailure=32;
+			}
 		}
 		c.pipe[0].memory=r;
+	}
+	const auto bootDDI=c.bridge.bootPort;
+	check[38]=adoptionBranch;check[39]=bootDDI;
+	check[40]=static_cast<uint32_t>(callbackXE->adlnOutputWiring.transport(bootDDI));
+	check[41]=bootDDI<7 && (callbackXE->adlnOutputWiring.links()&(1U<<bootDDI));
+	check[42]=adoptionSSTPort;check[43]=bootActivePipes;check[44]=adoptionAUXCheck;
+	check[45]=adoptionFailure;check[46]=static_cast<uint32_t>(result.status);check[47]=result.domain;
+	check[48]=c.bridge.bootAdopted;check[49]=c.bridge.bootPGProtected;check[50]=c.bridge.bootDDIProtected;
+	check[51]=c.bridge.bootPath!=0;check[52]=bootDDI<2;
+	if(bootDDI<2) {
+		const auto &link=c.mainLink[bootDDI];
+		check[53]=link.bootPending;check[54]=link.owner!=0;check[55]=link.port;
+		check[56]=link.lease.owner==&c.bridge.state;check[57]=link.lease.domains;
 	}
 	if(result.status!=Display13Power::Status::Complete)adlnFault(c.bridge.state.faulted,__LINE__);
 	display13FBPowerRecord(record,7,0,result);

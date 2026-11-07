@@ -50,7 +50,7 @@ jobs:
       - name: Package
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          RELEASE_TAG: ${{ github.repository == 'b00t0x/WhateverXe' && github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           python3 tools/package.py --build build/DEBUG --configuration DEBUG --tag "$RELEASE_TAG"
           python3 tools/package.py --build build/RELEASE --configuration RELEASE --tag "$RELEASE_TAG"

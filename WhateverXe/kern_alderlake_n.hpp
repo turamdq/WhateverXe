@@ -302,13 +302,29 @@ template<class IO> Display13Power::Result holdDPBootAUX(IO &io,const DisplayRead
 // The caller retains that object on success and then adopts the boot path.
 // No hardware request or native AUX transaction counter changes at handoff.
 template<class IO> Display13Power::Result adoptDPBootAUX(IO &io,const DisplayReadout &boot,
-    Display13Power::NativeBridge &bridge,Display13Power::MainLinkAUX &link,uintptr_t target,unsigned ddi,bool panel=false) {
+    Display13Power::NativeBridge &bridge,Display13Power::MainLinkAUX &link,uintptr_t target,unsigned ddi,bool panel=false,
+    uint32_t *failedCheck=nullptr) {
     using namespace Display13Power;Result r;
-    if(!target || ddi>=2 || boot.activePipes!=1 || !dpSource(boot,0,ddi,nullptr,panel) || !dpSourceUnchanged(io,boot,0,ddi,0,nullptr,panel) ||
-       bridge.bootPort!=ddi || bridge.bootAdopted || !bridge.bootPGProtected || !bridge.bootDDIProtected ||
-       !bridge.outputHeld(io,ddi,0) || !link.bootPending || link.owner || link.port!=ddi ||
-       link.lease.owner!=&bridge.state || link.lease.domains!=dependencies(auxDomain(ddi)) ||
-       !held(io,bridge.state,link.lease.domains))return r;
+    if(failedCheck)*failedCheck=0;
+    auto reject=[&](uint32_t check) {if(failedCheck)*failedCheck=check;return r;};
+    // failedCheck 1..16 identify these guards in order. Preserve short-circuit
+    // order: later checks may inspect hardware and must not run after a failure.
+    if(!target)return reject(1);
+    if(ddi>=2)return reject(2);
+    if(boot.activePipes!=1)return reject(3);
+    if(!dpSource(boot,0,ddi,nullptr,panel))return reject(4);
+    if(!dpSourceUnchanged(io,boot,0,ddi,0,nullptr,panel))return reject(5);
+    if(bridge.bootPort!=ddi)return reject(6);
+    if(bridge.bootAdopted)return reject(7);
+    if(!bridge.bootPGProtected)return reject(8);
+    if(!bridge.bootDDIProtected)return reject(9);
+    if(!bridge.outputHeld(io,ddi,0))return reject(10);
+    if(!link.bootPending)return reject(11);
+    if(link.owner)return reject(12);
+    if(link.port!=ddi)return reject(13);
+    if(link.lease.owner!=&bridge.state)return reject(14);
+    if(link.lease.domains!=dependencies(auxDomain(ddi)))return reject(15);
+    if(!held(io,bridge.state,link.lease.domains))return reject(16);
     link.owner=target;link.bootPending=false;r.status=Status::Complete;return r;
 }
 enum class LinearStatus : uint32_t {

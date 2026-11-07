@@ -48,10 +48,10 @@ int main() {
         assert(holdDPBootAUX(io,readDisplay(io,true),bridge,link,ddi,panel).status==Status::NotReady);
         assert(bridge.getAUX(io,ddi).status==Status::Complete && bridge.putAUX(io,ddi).status==Status::Complete);
         assert(bridge.state.refs[ddi?6:8]==1 && !bridge.nativeAUXRefs(ddi));
-        const auto after=readDisplay(io,true);const auto requestBefore=map.at(AUX);
-        assert(adoptDPBootAUX(io,after,bridge,link,7,ddi,panel).status==Status::Complete);
+        const auto after=readDisplay(io,true);const auto requestBefore=map.at(AUX);uint32_t failedCheck=99;
+        assert(adoptDPBootAUX(io,after,bridge,link,7,ddi,panel,&failedCheck).status==Status::Complete && !failedCheck);
         assert(link.owner==7 && !link.bootPending && !bridge.nativeAUXRefs(ddi) && map.at(AUX)==requestBefore);
-        assert(adoptDPBootAUX(io,after,bridge,link,8,ddi,panel).status==Status::NotReady);
+        assert(adoptDPBootAUX(io,after,bridge,link,8,ddi,panel,&failedCheck).status==Status::NotReady && failedCheck==11);
         assert(bridge.adoptBootPath(9,0,ddi).status==Status::Complete);
         assert(link.begin(io,bridge,7,ddi).status==Status::Complete);
         assert(link.end(io,bridge,7,ddi).status==Status::NotReady); // Live GOP cannot release.
@@ -85,7 +85,12 @@ int main() {
         if(fault==0)target=0;if(fault==1)port=1;if(fault==2)map.at(AUX)=0;
         if(fault==3)map.at(0x60540)^=1;if(fault==4)b.bootPGProtected=false;
         if(fault==5)b.bootAdopted=true;if(fault==6)b.state.suspended=true;
-        assert(adoptDPBootAUX(io,boot,b,l,target,port).status==Status::NotReady && l.bootPending && !l.owner && l.lease.owner);
+        uint32_t failedCheck=0;
+        assert(adoptDPBootAUX(io,boot,b,l,target,port,false,&failedCheck).status==Status::NotReady && failedCheck && l.bootPending && !l.owner && l.lease.owner);
+        if(fault==0)assert(failedCheck==1);
+        if(fault==3)assert(failedCheck==5);
+        if(fault==4)assert(failedCheck==8);
+        if(fault==5)assert(failedCheck==7);
     }
     {IOMemoryMap map;firmware(map,0,false);FaultIO io{&map};NativeBridge b;MainLinkAUX l;
      assert(b.begin(io,0,3).status==Status::Complete);io.loseSource=true;
