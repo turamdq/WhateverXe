@@ -14657,6 +14657,13 @@ void XE::tglObserveAccelerator(IOService *that, uint32_t stage, bool done, uint6
 }
 
 IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SInt32 *score) {
+ auto root=IORegistryEntry::getRegistryRoot();
+ const SInt32 scoreBefore=score ? *score : -2147483647;
+ uint64_t probeBefore[] {1,reinterpret_cast<uintptr_t>(that),reinterpret_cast<uintptr_t>(provider),
+  reinterpret_cast<uintptr_t>(score),static_cast<uint32_t>(scoreBefore)};
+ root->setProperty("N97TGLProbeBeforeNative",probeBefore,sizeof(probeBefore));
+ IOLog("AlderLakeN probe wrapper entered that=%p provider=%p scorePtr=%p scoreBefore=%d\\n",
+  that,provider,score,scoreBefore);
  n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeEntry",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),17);
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
@@ -14691,6 +14698,21 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 	}
 	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeBeforeNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),18);
 	auto result = FunctionCast(wrapTGLAcceleratorProbe, callbackXE->orgTGLAcceleratorProbe)(that, provider, score);
+ const SInt32 scoreAfter=score ? *score : -2147483647;
+ uint64_t probeAfter[] {1,reinterpret_cast<uintptr_t>(that),reinterpret_cast<uintptr_t>(provider),
+  reinterpret_cast<uintptr_t>(result),static_cast<uint32_t>(scoreBefore),static_cast<uint32_t>(scoreAfter),
+  result!=nullptr};
+ root->setProperty("N97TGLProbeAfterNative",probeAfter,sizeof(probeAfter));
+ auto publishProbePath=[&](const char *key,IORegistryEntry *entry) {
+  char path[512] {}; int length=sizeof(path);
+  if(entry && entry->getPath(path,&length,gIOServicePlane))root->setProperty(key,path);
+  else root->setProperty(key,"<not-attached-or-unavailable>");
+ };
+ publishProbePath("N97TGLProbeThatPath",that);
+ publishProbePath("N97TGLProbeProviderPath",provider);
+ publishProbePath("N97TGLProbeResultPath",result);
+ IOLog("AlderLakeN probe wrapper returned result=%p scoreBefore=%d scoreAfter=%d that=%p provider=%p\\n",
+  result,scoreBefore,scoreAfter,that,provider);
 	n97CaptureAcceleratorProbeLifecycle("N97FBControllerLifecycleAcceleratorProbeAfterNative",that,provider,static_cast<IOService *>(callbackXE->tglObservationController),19,reinterpret_cast<uintptr_t>(result));
 	tglObserveAccelerator(that, 1, true, reinterpret_cast<uintptr_t>(result), identity);
 	return result;
