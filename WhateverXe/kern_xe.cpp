@@ -7682,6 +7682,79 @@ uint8_t *XE::display13SSTPort(void *port) {
  return p;
 }
 
+// Failure-only schema 1, published after the boot-handoff lock is released.
+// [0] schema, [1] first failed guard (1=request, 2=display, 3=hooks,
+// 4=null port, 5=port class size, 6=no controller, 7=controller mismatch,
+// 8=writer map, 9=clock fault, 10=memory fault, 11=panel fault,
+// 12=clock stopped, 13=unconfigured wiring, 14=topology/config,
+// 15=not a DP/eDP link, 16=port+117, 17=port+120, 18=port+550,
+// 19=port+578). Remaining slots contain evaluated values; zero means
+// false/not reached, and UINT64_MAX means a pointer/config value was unavailable.
+static uint64_t adlnSSTPortDiagnostic[40] {};
+static void adlnCaptureSSTPortDiagnostic(void *port) {
+ auto &d=adlnSSTPortDiagnostic;
+ for(unsigned i=0;i<40;++i)d[i]=0;
+ d[0]=1;
+ for(unsigned i=24;i<=29;++i)d[i]=UINT64_MAX;
+ d[17]=UINT64_MAX;d[35]=UINT64_MAX;
+ auto s=XE::callbackXE;auto &c=display13FBPower;
+ if(!s){d[1]=1;return;}
+ d[2]=s->display13FramebufferRequested;if(!d[2]){d[1]=1;return;}
+ d[3]=s->xeProfile.display==XELP::Display::XeLPD;if(!d[3]){d[1]=2;return;}
+ d[4]=s->display13FBSSTHooksReady;if(!d[4]){d[1]=3;return;}
+ auto object=static_cast<OSObject *>(port);d[5]=object!=nullptr;
+ if(!object){d[1]=4;return;}
+ d[6]=object->getMetaClass()->getClassSize();
+ if(d[6]<0x624){d[1]=5;return;}
+ d[7]=c.controller!=nullptr;if(!d[7]){d[1]=6;return;}
+ d[8]=c.controller==s->adlnTopologyController;if(!d[8]){d[1]=7;return;}
+ d[9]=adlnWriterMappingBound();if(!d[9]){d[1]=8;return;}
+ d[10]=c.clockFaulted;if(d[10]){d[1]=9;return;}
+ d[11]=c.memoryFaulted;if(d[11]){d[1]=10;return;}
+ d[12]=c.panelFaulted;if(d[12]){d[1]=11;return;}
+ d[13]=c.clockStopped;if(d[13]){d[1]=12;return;}
+ d[14]=s->adlnOutputWiring.described();if(!d[14]){d[1]=13;return;}
+
+ auto p=static_cast<uint8_t *>(port);
+ auto config=Display13FBMemory::field<uint32_t *>(p,0x548);
+ d[15]=reinterpret_cast<uintptr_t>(config);
+ d[19]=s->adlnOutputWiring.selected();
+ d[20]=s->adlnOutputWiring.links();
+ d[21]=s->adlnOutputWiring.panel;
+ d[22]=s->adlnOutputWiring.dp;
+ d[23]=s->adlnOutputWiring.typeC;
+
+ unsigned boundDDI=Display13FBTopology::Ports;
+ for(unsigned ddi=0;ddi<Display13FBTopology::Ports;++ddi)
+  if(Display13FBTopology::bound(s->adlnPlatform,config,ddi)){boundDDI=ddi;break;}
+ d[16]=boundDDI<Display13FBTopology::Ports;
+ d[17]=d[16]?boundDDI:UINT64_MAX;
+ if(d[16]) {
+  for(unsigned i=0;i<6;++i)d[24+i]=config[i];
+  d[18]=s->adlnOutputWiring.matches(config);
+  if(config[0]<32) {
+   d[30]=(s->adlnOutputWiring.selected()&(1U<<config[0]))!=0;
+   d[31]=(s->adlnOutputWiring.links()&(1U<<config[0]))!=0;
+  }
+  if(config[0]<7)
+   d[35]=config[0]>=3?((s->adlnOutputWiring.typeC&(1U<<config[0]))?3U:4U):1U;
+ }
+ d[32]=p[0x117];
+ d[33]=Display13FBMemory::field<uint32_t>(p,0x120);
+ d[34]=Display13FBMemory::field<uint32_t>(p,0x550);
+ d[36]=Display13FBMemory::field<uintptr_t>(p,0x578);
+ d[37]=reinterpret_cast<uintptr_t>(c.access);
+ d[38]=Display13FBMemory::field<void *>(p,0x578)==c.access;
+ d[39]=Display13FBTopology::selected(s->adlnPlatform,config,s->adlnOutputWiring);
+ if(!d[39]){d[1]=14;return;}
+ const auto ddi=config[0]; // selected() proves this is a valid platform DDI.
+ if(!(s->adlnOutputWiring.links()&(1U<<ddi))){d[1]=15;return;}
+ if(d[32]){d[1]=16;return;}
+ if(d[33]!=ddi){d[1]=17;return;}
+ if(d[34]!=d[35]){d[1]=18;return;}
+ if(!d[38]){d[1]=19;return;}
+ d[1]=0;
+}
 bool XE::display13HDMIPort(void *port) {
  auto s=callbackXE;auto object=static_cast<OSObject *>(port);
  if(!object || object->getMetaClass()->getClassSize()<0x580)return false;
@@ -8621,7 +8694,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
                 if(dp) {
                     adoptionBranch=2;
                     auto sstPort=display13SSTPort(port);adoptionSSTPort=sstPort!=nullptr;
-                    if(!sstPort)adoptionFailure=17;
+                    if(!sstPort) {adlnCaptureSSTPortDiagnostic(port);adoptionFailure=17;}
                 }
                 if(dp && adoptionSSTPort) {
                     Display13FBBootIO io{c.map};auto &boot=c.displayScratch;AlderLakeN::readDisplay(io,true,boot);
@@ -8672,7 +8745,10 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 	IOLockUnlock(c.lock);
 	if(result.status!=Display13Power::Status::Complete && adlnIRQOwner(controller))wrapDisplay13FBDisableIRQ(controller);
 	adlnPublishPowerRecord("N97FBBootHandoff",record);
-	IORegistryEntry::getRegistryRoot()->setProperty("N97FBBootHandoffCheck",check,sizeof(check));
+	auto root=IORegistryEntry::getRegistryRoot();
+	root->setProperty("N97FBBootHandoffCheck",check,sizeof(check));
+	if(adoptionBranch==2 && !adoptionSSTPort)
+		root->setProperty("N97FBSSTPortDiagnostic",adlnSSTPortDiagnostic,sizeof(adlnSSTPortDiagnostic));
 }
 
 bool XE::wrapAlderLakeNScanoutAllocate(IOService *fb) {

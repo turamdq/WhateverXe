@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'experiment/46b3-vcs2-only']
     tags: ['*']
   pull_request:
   workflow_dispatch:
