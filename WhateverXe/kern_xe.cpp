@@ -7691,13 +7691,13 @@ uint8_t *XE::display13SSTPort(void *port) {
 // 19=port+578). Remaining slots contain evaluated values; zero means
 // false/not reached, and UINT64_MAX means a pointer/config value was unavailable.
 static uint64_t adlnSSTPortDiagnostic[40] {};
-static void adlnCaptureSSTPortDiagnostic(void *port) {
+void XE::captureDisplay13SSTPortDiagnostic(void *port) {
  auto &d=adlnSSTPortDiagnostic;
  for(unsigned i=0;i<40;++i)d[i]=0;
  d[0]=1;
  for(unsigned i=24;i<=29;++i)d[i]=UINT64_MAX;
  d[17]=UINT64_MAX;d[35]=UINT64_MAX;
- auto s=XE::callbackXE;auto &c=display13FBPower;
+ auto s=callbackXE;auto &c=display13FBPower;
  if(!s){d[1]=1;return;}
  d[2]=s->display13FramebufferRequested;if(!d[2]){d[1]=1;return;}
  d[3]=s->xeProfile.display==XELP::Display::XeLPD;if(!d[3]){d[1]=2;return;}
@@ -8694,7 +8694,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
                 if(dp) {
                     adoptionBranch=2;
                     auto sstPort=display13SSTPort(port);adoptionSSTPort=sstPort!=nullptr;
-                    if(!sstPort) {adlnCaptureSSTPortDiagnostic(port);adoptionFailure=17;}
+                    if(!sstPort) {captureDisplay13SSTPortDiagnostic(port);adoptionFailure=17;}
                 }
                 if(dp && adoptionSSTPort) {
                     Display13FBBootIO io{c.map};auto &boot=c.displayScratch;AlderLakeN::readDisplay(io,true,boot);
