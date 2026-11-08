@@ -9,6 +9,11 @@ code='''
 #include <cassert>
 #include <cstdint>
 struct IOService {};
+struct IORegistryEntry {
+ template <typename T> bool setProperty(const char *, T, ...) { return true; }
+ static IORegistryEntry *getRegistryRoot() { static IORegistryEntry root; return &root; }
+};
+static void IOLog(const char *, ...) {}
 static void n97CaptureFBControllerLifecycle(const char *, IOService *, IOService *, uint64_t) {}
 struct { IOService *controller = nullptr; } display13FBGTT;
 struct XE {
