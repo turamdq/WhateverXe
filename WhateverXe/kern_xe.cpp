@@ -14931,14 +14931,18 @@ void XE::wrapAlderLakeNNativeGPUInfo(IOService *that) {
 }
 
 bool XE::wrapAlderLakeNNativeIRQ(IOService *that) {
+	IOLog("AlderLakeN native IRQ stage=0 entering initInterruptBridge that=%p\n",that);
 	tglObserveAccelerator(that,9,false,0,0);
 	const bool result=FunctionCast(wrapAlderLakeNNativeIRQ,callbackXE->orgAlderLakeNNativeIRQ)(that);
-	tglObserveAccelerator(that,9,true,result,*reinterpret_cast<uintptr_t *>(reinterpret_cast<uint8_t *>(that)+0x1248));
+	const auto bridge=*reinterpret_cast<uintptr_t *>(reinterpret_cast<uint8_t *>(that)+0x1248);
+	IOLog("AlderLakeN native IRQ stage=1 returned result=%u bridge=%p\n",result,reinterpret_cast<void *>(bridge));
+	tglObserveAccelerator(that,9,true,result,bridge);
 	return result;
 }
 
 bool XE::wrapTGLAcceleratorEngine(IOService *that) {
  if (callbackXE->adlnDetected) {
+  IOLog("AlderLakeN engine stage=0 entering native resource validation that=%p\n",that);
   auto a=reinterpret_cast<uint8_t *>(that);
   uint32_t caps[] {*reinterpret_cast<uint32_t *>(a+0x1120),*reinterpret_cast<uint32_t *>(a+0x1124),
    *reinterpret_cast<uint32_t *>(a+0x1158),*reinterpret_cast<uint32_t *>(a+0x115C),
@@ -14976,8 +14980,10 @@ bool XE::wrapTGLAcceleratorEngine(IOService *that) {
      ready=*reinterpret_cast<volatile uint64_t *>(bar+0x800000+((start+i)>>9))==Display13FBGTT::pte(physical,i);
    }
   }
+  IOLog("AlderLakeN engine stage=1 resource validation complete ready=%u attached=%u reserve=0x%llx\n",ready,attached,reserve);
   for (unsigned i=0;ready && i<xelpMemory.bytes/4096;++i)
    ready=*reinterpret_cast<volatile uint64_t *>(bar+0x800000+8*i)==xelpMemory.pte(uint64_t(i)*4096);
+  IOLog("AlderLakeN engine stage=2 GGTT validation complete ready=%u bytes=0x%llx\n",ready,xelpMemory.bytes);
   that->setProperty("N97NativeCaps",caps,sizeof(caps));
   that->setProperty("N97NativeAllocator",ranges,sizeof(ranges));
   that->setProperty("N97NativePreEngineReady",ready);
@@ -14991,7 +14997,10 @@ bool XE::wrapTGLAcceleratorEngine(IOService *that) {
    IOLog("AlderLakeN native parent-only stop caps=%u irq=%u\n",ready,irq);
    return false; // Diagnostic failure/unwind; never report accelerator success.
   }
-  if (!ready) return false;
+  if (!ready) {
+   IOLog("AlderLakeN engine rejected before startGraphicsEngine: native resources not ready\n");
+   return false;
+  }
  }
  if (tglHost.startingOwner==that) {
   const bool ready=callbackXE->adlnDetected ? adlnNativeIRQPrerequisites(that,false) :
@@ -15000,11 +15009,16 @@ bool XE::wrapTGLAcceleratorEngine(IOService *that) {
   if (!ready) {tglHostPublish();return false;}
  }
 
- if(!tglCPSPrepare(that))return false;
-
+ IOLog("AlderLakeN engine stage=3 before CPS preparation\n");
+ if(!tglCPSPrepare(that)) {
+  IOLog("AlderLakeN engine stage=4 CPS preparation rejected\n");
+  return false;
+ }
+ IOLog("AlderLakeN engine stage=5 CPS preparation complete; entering startGraphicsEngine\n");
  auto irq=tglFBIRQBegin(3,callbackXE->tglObservationController,0,reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
 	tglObserveAccelerator(that, 6, false, 0, 0);
 	const bool result = FunctionCast(wrapTGLAcceleratorEngine, callbackXE->orgTGLAcceleratorEngine)(that);
+ IOLog("AlderLakeN engine stage=6 startGraphicsEngine returned result=%u\n",result);
 	tglObserveAccelerator(that, 6, true, result, 0);
 	tglFBIRQEnd(irq,result);
 	if (tglHost.owner==that) tglHostPublish();
