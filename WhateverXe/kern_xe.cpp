@@ -8694,11 +8694,16 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
                 if(dp) {
                     adoptionBranch=2;
                     auto sstPort=display13SSTPort(port);adoptionSSTPort=sstPort!=nullptr;
+                    IOLog("AlderLakeN BootHandoff stage=1 SST ddi=%u accepted=%u\\n",ddi,adoptionSSTPort);
                     if(!sstPort) {captureDisplay13SSTPortDiagnostic(port);adoptionFailure=17;}
                 }
                 if(dp && adoptionSSTPort) {
-                    Display13FBBootIO io{c.map};auto &boot=c.displayScratch;AlderLakeN::readDisplay(io,true,boot);
+                    Display13FBBootIO io{c.map};auto &boot=c.displayScratch;
+                    IOLog("AlderLakeN BootHandoff stage=2 before readDisplay\\n");
+                    AlderLakeN::readDisplay(io,true,boot);
                     bootActivePipes=boot.activePipes;
+                    IOLog("AlderLakeN BootHandoff stage=3 after readDisplay status=%u active=0x%x powered=0x%x\\n",
+                        static_cast<uint32_t>(boot.status),boot.activePipes,boot.poweredPipes);
                     if(ddi>=3) {
                         const auto source=Display13TC::Boot::capture(io,true,ddi,0);
                         Display13FBTCIO tc{port,ddi-3};
@@ -8709,13 +8714,24 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
                         else linked=true;
                     } else if(ddi<2) {
                         adoptionAUXCheck=true;
-                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,c.mainLink[ddi],reinterpret_cast<uintptr_t>(port),ddi,
-                            (callbackXE->adlnOutputWiring.panel&(1U<<ddi))!=0,&adoptionFailure);
+                        const bool panel=(callbackXE->adlnOutputWiring.panel&(1U<<ddi))!=0;
+                        auto &link=c.mainLink[ddi];
+                        IOLog("AlderLakeN BootHandoff stage=4 before AUX adopt ddi=%u panel=%u active=0x%x bootPending=%u owner=%u port=%u domains=0x%x\\n",
+                            ddi,panel,boot.activePipes,link.bootPending,link.owner!=0,link.port,link.lease.domains);
+                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,link,reinterpret_cast<uintptr_t>(port),ddi,
+                            panel,&adoptionFailure);
                         linked=result.status==Display13Power::Status::Complete;
+                        IOLog("AlderLakeN BootHandoff stage=5 after AUX adopt status=%u failedCheck=%u domain=%u linked=%u\\n",
+                            static_cast<uint32_t>(result.status),adoptionFailure,result.domain,linked);
                         if(linked)port->retain(); // Released only after real buffer stop/idle.
                     } else adoptionFailure=22;
                 } else if(!dp)adoptionBranch=3;
-                if(linked)result=c.bridge.adoptBootPath(reinterpret_cast<uintptr_t>(path),0,ddi);
+                if(linked) {
+                    IOLog("AlderLakeN BootHandoff stage=6 before adoptBootPath ddi=%u\\n",ddi);
+                    result=c.bridge.adoptBootPath(reinterpret_cast<uintptr_t>(path),0,ddi);
+                    IOLog("AlderLakeN BootHandoff stage=7 after adoptBootPath status=%u domain=%u\\n",
+                        static_cast<uint32_t>(result.status),result.domain);
+                }
                 else result.status=Display13Power::Status::NotReady;
             }
 			else if(c.bridge.bootPath==reinterpret_cast<uintptr_t>(path))result.status=Display13Power::Status::Complete;
