@@ -14221,14 +14221,24 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
+ auto root=IORegistryEntry::getRegistryRoot();
+ uint32_t rejectSequence=0;
+ auto reject=[&](uint32_t reason)->bool {
+  ++rejectSequence;
+  root->setProperty("N97TGLStartWrapperRejectReason",reason,32);
+  IOLog("AlderLakeN start wrapper rejected reason=%u\n",reason);
+  return false;
+ };
+ root->setProperty("N97TGLStartWrapperEntered",true);
+ IOLog("AlderLakeN start wrapper stage=0 entered that=%p provider=%p\n",that,provider);
  n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartEntry",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),11);
  if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
     (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && (!callbackXE->adlsDisplayHooksReady ||
-     __atomic_load_n(&callbackXE->adlsBootConsumersFailed,__ATOMIC_ACQUIRE))))return false;
+     __atomic_load_n(&callbackXE->adlsBootConsumersFailed,__ATOMIC_ACQUIRE))))return reject(1);
  if (callbackXE->adlnDetected && adlnNativeRCSProfileRequested && !adlnNativeRCSProfileReady) {
   SYSLOG("igfx", "AlderLakeN native RCS profile qualification rejected accelerator start");
-  return false;
+  return reject(2);
  }
  if (callbackXE->adlnDetected && checkKernelArgument("-wex-adln-load-only")) {
   // No parent/native start, private-object reads, engine work or fake success.
@@ -14239,13 +14249,13 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
   IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlyProviderReady",admitted);
   if (admitted && callbackXE->adlnParentBoundaryReady && checkKernelArgument("-wex-adln-parent-entry"))
    return startAlderLakeNParentBoundary(that,provider);
-  return false;
+  return reject(3);
  }
  tglRecordStartOrder(5,that);
-	if (!callbackXE->tglAcceleratorReady) return false;
+	if (!callbackXE->tglAcceleratorReady) return reject(4);
 	if (callbackXE->adlnDetected) {
 		auto pci=OSDynamicCast(IOPCIDevice,provider);
-		if (!callbackXE->adlnNativeReady || !pci || !xelpDisplay13RenderDevice(pci)) return false;
+		if (!callbackXE->adlnNativeReady || !pci || !xelpDisplay13RenderDevice(pci)) return reject(5);
 		// Standalone startup never calls framebuffer start, which normally
 		// exposes these retained IRQ/submission records. Publish the same
 		// passive serializer here; it makes no driver calls or GPU reads.
@@ -14274,12 +14284,12 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 		// refcounts, the existing host scheduler, and no GuC before parent start.
 		auto dev=OSDynamicCast(OSDictionary,that->getProperty("Development"));
 		auto copy=dev ? OSDictionary::withDictionary(dev) : nullptr;
-		if (!copy) return false;
+		if (!copy) return reject(6);
 		const char *keys[] {"MultiForceWakeSelect","GraphicsSchedulerSelect"};
 		const unsigned values[] {1,5};
 		for (unsigned i=0;i<2;++i) {
 			auto num=OSNumber::withNumber(values[i],32);
-			if (!num) {copy->release();return false;}
+			if (!num) {copy->release();return reject(7);}
 			copy->setObject(keys[i],num);num->release();
 		}
 		that->setProperty("Development",copy);copy->release();
@@ -14303,7 +14313,7 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 
 	if (!tglBlitScratchSize || (*tglBlitScratchSize!=0xD240 && *tglBlitScratchSize!=0xE000)) {
 		SYSLOG("igfx", "TGL blit scratch parameter mismatch");
-		return false;
+		return reject(8);
 	}
 	*tglBlitScratchSize=0xE000;
 	IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitScratchAllocation",*tglBlitScratchSize,64);
@@ -14322,7 +14332,9 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
   }
 	}
 	tglObserveAccelerator(that, 2, false, 0, reinterpret_cast<uintptr_t>(provider));
-	SYSLOG("igfx", "TGL accelerator start entered");
+	root->setProperty("N97TGLStartWrapperReachedNativeCall",true);
+ IOLog("AlderLakeN start wrapper stage=1 calling native start\n");
+ SYSLOG("igfx", "TGL accelerator start entered");
 	 n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartBeforeNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),12);
 bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAcceleratorStart)(that, provider);
  n97CaptureFBControllerLifecycle("N97FBControllerLifecycleAcceleratorStartAfterNative",display13FBGTT.controller,static_cast<IOService *>(callbackXE->tglObservationController),13,result);
@@ -14339,7 +14351,10 @@ bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAccelerato
  tglHost.startingOwner=nullptr;
 	tglObserveAccelerator(that, 2, true, result, reinterpret_cast<uintptr_t>(provider));
 	tglRecordStartOrder(6,that,9,0,0,result);
-	SYSLOG("igfx", "TGL accelerator start returned %d", result);
+	root->setProperty("N97TGLStartWrapperReturned",true);
+ root->setProperty("N97TGLStartWrapperResult",result);
+ IOLog("AlderLakeN start wrapper stage=2 native returned result=%u\n",result);
+ SYSLOG("igfx", "TGL accelerator start returned %d", result);
 	if(result && callbackXE->adlnDetected && checkKernelArgument("-wex-adln-kernel-ctx"))adlnRunKernelContextTrial(that);
 	return result;
 }
