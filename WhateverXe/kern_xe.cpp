@@ -11591,6 +11591,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			const bool ok = patcher.routeMultiple(index, &request, 1, address, size);
 			SYSLOG("igfx", "TGL accelerator start route=%d", ok);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAcceleratorStartRouted", ok);
+			SYSLOG("igfx", "TGL accelerator setup stage=01 (start hook routed)");
 			// Check native helper bytes BEFORE existing GuC diagnostic routes.
 			// PRM Vol2c part1 pp121-124: valid + force even for empty ring restore.
 			const uint8_t cpsAllocHead[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x41,0x89,0xce,0x41,0x89,0xd7,0x49,0x89,0xf4};
@@ -11637,6 +11638,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				dmaWriteOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(site,jump,sizeof(jump));
 			}
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMAWriteObservationRouted",dmaWriteOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=02 (GuC/DMA observers)");
 			bool hostOK=true;
 			if (checkKernelArgument("-disablegfxfirmware")) {
 				KernelPatcher::RouteRequest host[] {
@@ -11721,6 +11723,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			tglAlderLakeNContextPublishEnabled=adlnDetected && checkKernelArgument("-wex-adln-ctx-publish") &&
 			 hostOK && tglVM.enabled && !checkKernelArgument("-wex-adln-kernel-ctx");
 			IORegistryEntry::getRegistryRoot()->setProperty("N97ContextPublishReady",tglAlderLakeNContextPublishEnabled);
+			SYSLOG("igfx", "TGL accelerator setup stage=03 (host/queue/context)");
 			// r112 (qualified r108 correction): the wired descriptor pool consumes whole pages without rounding.
 			// TGL requests D240 bytes but writes through D210; ICL requests 9000.
 			// Change only this context's allocation parameter, after constructors.
@@ -11783,6 +11786,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
                 if(blitInitOK) blitInitOK=patcher.routeMultiple(index,route,arrsize(route),address,size);
 			}
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitInitialBatchReady",blitInitOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=04 (copy/blit)");
             if(blitInitOK) if(auto live=OSSerializer::forTarget(nullptr,tglBlitDeferredSerialize)) {
              IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitDeferredInitLive",live);live->release();
             }
@@ -11877,6 +11881,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassFlushReady",flushOK);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassTileFlushReady",flushOK);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassConstAlternativeReady",flushOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=05 (CCS/render flush)");
 			// The outer RCS completion emitter is separate from the render-pass
 			// emitter above. Apply the same Vol14 constant-cache alternative to
 			// its stamp and optional notification packets on the qualified Tahoe
@@ -11904,6 +11909,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			tglGSYNCObserveReady=gsyncQualified;
 			tglGSYNCReady=gsyncQualified && !(tglTahoeDisabledTrials&8);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLGSYNCDisableReady",tglGSYNCReady);
+			SYSLOG("igfx", "TGL accelerator setup stage=06 (GSYNC/trials)");
 			if(tglGSYNCObserveReady)if(auto live=OSSerializer::forTarget(nullptr,tglGSYNCSerialize)) {
 				IORegistryEntry::getRegistryRoot()->setProperty("TGLGSYNCLive",live);live->release();
 			}
@@ -11958,6 +11964,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			}
 			patcher.clearError();
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLCPSColorPipeReady",cpsOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=07 (CPS colour pipe)");
 			// Linux Gen12 Wa_18022495364: an INDIRECT_CTX cache invalidation,
 			// distinct from ring PIPE_CONTROL. Keep the per-context batch intact.
 			bool contextCacheOK=!contextCacheRequested;
@@ -11976,6 +11983,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			}
 			tglContextCacheEnabled=contextCacheRequested && contextCacheOK;
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLContextCacheIndirectReady",tglContextCacheEnabled);
+			SYSLOG("igfx", "TGL accelerator setup stage=08 (context cache/RPCS)");
 			// The native RCS constructor initializes RPCS with ENABLE alone.
 			// Request the one TGL slice explicitly, as intel_sseu_make_rpcs does.
 			// Preserve the instruction and native ownership/lifetime of the image.
@@ -12055,6 +12063,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			}
 			patcher.clearError();
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRCSTLBPreparserReady",tlbPreparserOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=09 (RCS TLB)");
 			if(auto live=OSSerializer::forTarget(nullptr,tglRCSTLBSerialize)) {
 				IORegistryEntry::getRegistryRoot()->setProperty("TGLRCSTLBPreparserLive",live);live->release();
 			}
@@ -12091,6 +12100,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
             }
             patcher.clearError();
             IORegistryEntry::getRegistryRoot()->setProperty("TGLSemaphoreTLBReady",semaphoreTLBOK);
+            SYSLOG("igfx", "TGL accelerator setup stage=10 (semaphore TLB)");
             if(auto live=OSSerializer::forTarget(nullptr,tglSemaphoreSerialize)) {
              IORegistryEntry::getRegistryRoot()->setProperty("TGLSemaphoreTLBLive",live);live->release();
             }
@@ -12109,6 +12119,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				hangOK=patcher.routeMultiple(index,hook,arrsize(hook),address,size);
 			}
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLHangBatchCaptureReady",hangOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=11 (hang capture)");
             // Exact failure-only wake call. Native STOP, wake ownership and all
             // other callers remain unchanged; no instrumentation in normal submits.
             if((XELP::kernelOS(version)==XELP::OS::Tahoe)) {
@@ -12167,10 +12178,12 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			}
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassRequested",recoveryRequested);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassReady",recoveryRequested && recoveryOK);
+			SYSLOG("igfx", "TGL accelerator setup stage=12 (recovery hooks)");
 			tglAcceleratorReady = surfaceABIReady && adlnObserved && skuReady && urbReady && ccsReady && hizReady && ccsPSReady && ggttOK && observed && ok && gucOK && dmaWriteOK && hostOK && scratchOK && blitInitOK && tglMMIOUCReady && copyOK && auxAlignOK && iosCCSOK && ffModeOK && cpsOK && flushOK && tlbPreparserOK && semaphoreTLBOK && hangOK && recoveryOK && completionCacheOK && contextCacheOK;
 			// r201: resource/copy diagnostics are absent, not admission requirements.
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLResourceDiagnosticsRemoved",true);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLAcceleratorAdmissionReady", tglAcceleratorReady);
+			SYSLOG("igfx", "TGL accelerator setup stage=13 (patch setup complete)");
 			patcher.clearError();
    tglRecordStartOrder(2,nullptr);
 			return true;
