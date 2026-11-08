@@ -14922,8 +14922,10 @@ bool XE::wrapAlderLakeNNativeMemory(IOService *that) {
 }
 
 void XE::wrapAlderLakeNNativeGPUInfo(IOService *that) {
+	IOLog("AlderLakeN native GPUInfo stage=0 entering getGPUInfo that=%p\\n",that);
 	tglObserveAccelerator(that,8,false,0,0);
 	FunctionCast(wrapAlderLakeNNativeGPUInfo,callbackXE->orgAlderLakeNNativeGPUInfo)(that);
+	IOLog("AlderLakeN native GPUInfo stage=1 returned from getGPUInfo that=%p\\n",that);
 	auto a=reinterpret_cast<uint8_t *>(that);
 	const uint64_t profile=uint64_t(*reinterpret_cast<uint32_t *>(a+0x1124))<<32 |
 		*reinterpret_cast<uint32_t *>(a+0x1164);
