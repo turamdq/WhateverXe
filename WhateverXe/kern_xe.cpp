@@ -8553,6 +8553,24 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 		!display13FBPower.clockFaulted && !display13FBPower.memoryFaulted && display13FBPower.engineEnabled &&
 		!display13FBPower.dbuf.faulted && !display13FBPower.dbuf.updating && !display13FBPower.watermarkFaulted &&
 		display13FBPower.latency.status==Display13WM::Status::Complete;
+    // Read-only receipt for each term in the final framebuffer admission predicate.
+    uint64_t acceptance[] {
+        1, started, irqEnabled, display13FBPower.bridge.begun,
+        display13FBPower.bridge.bootAdopted, display13FBPower.bridge.state.faulted,
+        display13FBPower.clockFaulted, display13FBPower.memoryFaulted,
+        display13FBPower.engineEnabled, display13FBPower.dbuf.faulted,
+        display13FBPower.dbuf.updating, display13FBPower.watermarkFaulted,
+        static_cast<uint32_t>(display13FBPower.latency.status),
+        display13FBPower.dbuf.begun
+    };
+    auto acceptanceRoot=IORegistryEntry::getRegistryRoot();
+    acceptanceRoot->setProperty("N97FramebufferAcceptance",acceptance,sizeof(acceptance));
+    IOLog("AlderLakeN framebuffer acceptance started=%u irq=%u bridge=%u adopted=%u bridgeFault=%u clockFault=%u memoryFault=%u engine=%u dbufFault=%u dbufUpdating=%u wmFault=%u latency=%u dbufBegun=%u\\n",
+        started,irqEnabled,display13FBPower.bridge.begun,display13FBPower.bridge.bootAdopted,
+        display13FBPower.bridge.state.faulted,display13FBPower.clockFaulted,display13FBPower.memoryFaulted,
+        display13FBPower.engineEnabled,display13FBPower.dbuf.faulted,display13FBPower.dbuf.updating,
+        display13FBPower.watermarkFaulted,static_cast<uint32_t>(display13FBPower.latency.status),
+        display13FBPower.dbuf.begun);
 	if(accepted) {
   s->tglObservationController=that;
   uint64_t shared[] {1,Display13FBMemory::field<uint32_t>(that,0xDF8),Display13FBMemory::field<uint64_t>(that,0xDC0),
@@ -14812,10 +14830,17 @@ bool XE::wrapTGLAcceleratorRegister(IOService *that) {
   controller ? Display13FBMemory::field<uint32_t>(controller,0xDF8) : 0,display13FBGTT.initialized,display13FBGTT.faulted,display13FBPower.memoryFaulted};
  IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterCheck",before,sizeof(before));
  IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterPrerequisites",ready);
+	 IOLog("AlderLakeN register preflight ready=%u controller=%p controllerProvider=%p accelerator=%p acceleratorProvider=%p owner=0x%llx reservation=0x%x minimum=0x%x gtt=%u gttFault=%u memoryFault=%u\\n",
+	  ready,controller,controller?controller->getProvider():nullptr,that,that?that->getProvider():nullptr,
+	  controller?static_cast<unsigned long long>(Display13FBMemory::field<uintptr_t>(controller,0xC0)):0ULL,
+	  controller?Display13FBMemory::field<uint32_t>(controller,0xDF8):0,xelpMemory.minimumReservation(),
+	  display13FBGTT.initialized,display13FBGTT.faulted,display13FBPower.memoryFaulted);
 	 if(!ready)return false;
 	 __atomic_store_n(&adlnSharedOwner,that,__ATOMIC_RELEASE);
 	}
+	IOLog("AlderLakeN register stage=1 calling native accelerator registration that=%p\\n",that);
 	const bool result = FunctionCast(wrapTGLAcceleratorRegister, callbackXE->orgTGLAcceleratorRegister)(that);
+	IOLog("AlderLakeN register stage=2 native registration returned result=%u\\n",result);
 	bool bound=true;
 	if(callbackXE->adlnDetected) {
 	 const uint32_t reserve=adlnRequestedSharedReservation(controller);
